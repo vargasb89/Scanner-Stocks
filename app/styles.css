@@ -163,6 +163,12 @@ input:focus {
   border: 1px solid #f0c9c5;
 }
 
+.warning {
+  background: #fff8e8;
+  color: #83530e;
+  border: 1px solid #eed7a5;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -223,7 +229,7 @@ input:focus {
 
 table {
   width: 100%;
-  min-width: 1120px;
+  min-width: 1480px;
   border-collapse: collapse;
 }
 

@@ -2,7 +2,6 @@ import {
   fetchGroupedDay,
   fetchTickerDetails,
   fetchTickerDailyRange,
-  fetchTickerFloat,
   getRecentCalendarDates,
 } from "@/lib/massive";
 import {
@@ -17,11 +16,11 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const DEFAULTS = {
-  lookbackSessions: 5,
+  lookbackSessions: 6,
   moveThreshold: 50,
   maxMarketCap: 300_000_000,
   maxRetracement: 50,
-  calendarDays: 14,
+  calendarDays: 21,
 };
 
 function toNumber(value, fallback) {
@@ -41,49 +40,97 @@ function buildPriceCandidates(barsByTicker, settings) {
       .filter((bar) => Number.isFinite(bar.close) && bar.close > 0)
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    if (sorted.length < settings.lookbackSessions + 1) continue;
+    if (sorted.length < settings.lookbackSessions) continue;
 
+    const recentBars = sorted.slice(-settings.lookbackSessions);
     const latest = sorted.at(-1);
     const previous = sorted.at(-2);
-    const windowBars = sorted.slice(-settings.lookbackSessions);
-    const baseBar = sorted.at(-settings.lookbackSessions - 1);
 
-    if (!latest || !previous || !baseBar) continue;
+    if (!latest || !previous) continue;
 
-    const runHighBar = windowBars.reduce((best, bar) =>
-      bar.high > best.high ? bar : best,
-    );
-    const runPct = ((runHighBar.high - baseBar.close) / baseBar.close) * 100;
+    const runs = [];
 
-    if (runPct < settings.moveThreshold) continue;
+    for (let index = 1; index < recentBars.length; index += 1) {
+      const bar = recentBars[index];
+      const priorBar = recentBars[index - 1];
+      const prevClose = priorBar.close;
+      const advance = bar.high - prevClose;
 
-    const advance = runHighBar.high - baseBar.close;
-    if (advance <= 0) continue;
+      if (advance <= 0) continue;
 
-    const retracementPct = ((runHighBar.high - latest.close) / advance) * 100;
-    if (retracementPct > settings.maxRetracement) continue;
+      const runPct = ((bar.high / prevClose) - 1) * 100;
+      const retracementPct = ((bar.high - bar.close) / advance) * 100;
+      const isRun =
+        runPct >= settings.moveThreshold &&
+        retracementPct <= settings.maxRetracement &&
+        bar.close > bar.open;
 
-    const dayChangePct = ((latest.close - previous.close) / previous.close) * 100;
-    const runIndex = sorted.findIndex((bar) => bar.date === runHighBar.date);
+      if (isRun) {
+        runs.push({
+          bar,
+          prevClose,
+          runPct,
+          retracementPct: Math.max(0, retracementPct),
+          midpoint: prevClose + advance * 0.5,
+        });
+      }
+    }
+
+    const latestRun = runs.at(-1);
+    if (!latestRun) continue;
+
+    const runIndex = sorted.findIndex((bar) => bar.date === latestRun.bar.date);
     const dayAfterRun = sorted[runIndex + 1]?.date || null;
+    const dayChangePct = ((latest.close - previous.close) / previous.close) * 100;
+    let daysHolding = 0;
+
+    for (const bar of sorted.slice(runIndex)) {
+      if (bar.close >= latestRun.midpoint) {
+        daysHolding += 1;
+      } else {
+        break;
+      }
+    }
 
     candidates.push({
       ticker,
       dayChangePct,
-      runPct,
-      retracementPct: Math.max(0, retracementPct),
+      runPct: latestRun.runPct,
+      retracementPct: latestRun.retracementPct,
       volume: latest.volume,
+      runDayVolume: latestRun.bar.volume,
       lastClose: latest.close,
-      runHigh: runHighBar.high,
-      runDay: runHighBar.date,
+      runHigh: latestRun.bar.high,
+      runDay: latestRun.bar.date,
       dayAfterRun,
-      baseDate: baseBar.date,
-      baseClose: baseBar.close,
+      daysHolding,
+      midpoint: latestRun.midpoint,
+      baseDate: recentBars[0].date,
+      baseClose: latestRun.prevClose,
       latestDate: latest.date,
     });
   }
 
   return candidates.sort((a, b) => b.runPct - a.runPct);
+}
+
+function buildMetaWarnings({ errorCount, loadedDates, settings }) {
+  const warnings = [];
+  const requiredSessions = settings.lookbackSessions;
+
+  if (errorCount > 0) {
+    warnings.push(
+      `Massive limito algunas llamadas; se usaron los datos disponibles en cache.`,
+    );
+  }
+
+  if (loadedDates.length < requiredSessions) {
+    warnings.push(
+      `Hay ${loadedDates.length} sesiones cargadas y se necesitan al menos ${requiredSessions} para calcular ${settings.lookbackSessions} dias.`,
+    );
+  }
+
+  return warnings;
 }
 
 function sleep(ms) {
@@ -107,6 +154,20 @@ async function getGroupedDayWithCache(date) {
   return { bars, source: "api" };
 }
 
+function normalizeMarketCap(row) {
+  const estimatedMarketCap =
+    row.sharesOutstanding && row.lastClose
+      ? row.sharesOutstanding * row.lastClose
+      : null;
+  const marketCap = row.marketCap ?? estimatedMarketCap;
+
+  return {
+    ...row,
+    marketCap,
+    marketCapSource: row.marketCap ? "reported" : estimatedMarketCap ? "estimated" : "missing",
+  };
+}
+
 async function enrichCandidate(candidate) {
   const cached = await getCachedFundamentals(candidate.ticker);
   if (cached) {
@@ -116,7 +177,13 @@ async function enrichCandidate(candidate) {
     };
   }
 
-  const details = await fetchTickerDetails(candidate.ticker);
+  let details = {};
+
+  try {
+    details = await fetchTickerDetails(candidate.ticker);
+  } catch {
+    details = {};
+  }
 
   const enriched = {
     ...candidate,
@@ -173,9 +240,12 @@ export async function GET(request) {
     };
 
     const tickerFilter = formatTicker(url.searchParams.get("ticker"));
-    const dates = getRecentCalendarDates(settings.calendarDays);
+    const scanCalendarDays = Math.max(settings.calendarDays, settings.lookbackSessions * 4);
+    const dates = getRecentCalendarDates(scanCalendarDays);
     const dailyResults = [];
     const dataSources = { api: 0, cache: 0 };
+    const loadErrors = [];
+    const loadedMarketDates = [];
 
     if (tickerFilter) {
       const range = dateRangeFromCalendarDates(dates);
@@ -183,24 +253,35 @@ export async function GET(request) {
       dataSources.api = 1;
     } else {
       for (const date of dates) {
-        const day = await getGroupedDayWithCache(date);
-        dailyResults.push(day.bars);
-        dataSources[day.source] += 1;
+        try {
+          const day = await getGroupedDayWithCache(date);
+          dailyResults.push(day.bars);
+          dataSources[day.source] += 1;
+          if (day.bars.length > 0) loadedMarketDates.push(date);
 
-        if (day.source === "api") {
-          await sleep(12500);
+          if (day.source === "api") {
+            await sleep(12500);
+          }
+        } catch (loadError) {
+          loadErrors.push({ date, message: loadError.message });
+          dailyResults.push([]);
+        }
+
+        if (loadedMarketDates.length >= settings.lookbackSessions) {
+          break;
         }
       }
     }
 
     const barsByTicker = new Map();
-    const loadedDates = [];
+    const loadedDatesSet = new Set();
 
     for (const [dayIndex, bars] of dailyResults.entries()) {
-      if (bars.length > 0) loadedDates.push(dates[dayIndex]);
+      if (bars.length > 0 && !tickerFilter) loadedDatesSet.add(dates[dayIndex]);
 
       for (const bar of bars) {
         if (tickerFilter && bar.ticker !== tickerFilter) continue;
+        loadedDatesSet.add(bar.date);
         if (!barsByTicker.has(bar.ticker)) barsByTicker.set(bar.ticker, []);
         barsByTicker.get(bar.ticker).push(bar);
       }
@@ -208,32 +289,31 @@ export async function GET(request) {
 
     const priceCandidates = buildPriceCandidates(barsByTicker, settings);
     const withDetails = await enrichWithConcurrency(priceCandidates.slice(0, 120));
-    const marketCapMatches = withDetails
-      .filter((row) => row.marketCap !== null && row.marketCap < settings.maxMarketCap)
+    const rowsWithMarketCap = withDetails.map(normalizeMarketCap);
+    const marketCapMatches = rowsWithMarketCap
+      .filter((row) => row.marketCap === null || row.marketCap < settings.maxMarketCap)
       .sort((a, b) => b.runPct - a.runPct);
     const results = [];
 
     for (const row of marketCapMatches) {
-      if (row.freeFloat !== undefined && row.freeFloat !== null) {
-        results.push(row);
-        continue;
-      }
-
-      const floatData = await fetchTickerFloat(row.ticker);
-      const enriched = { ...row, ...floatData };
-      await saveFundamentals(row.ticker, enriched);
-      results.push(enriched);
-      await sleep(12500);
+      results.push(row);
     }
 
     const meta = {
       scannedTickers: barsByTicker.size,
       priceCandidates: priceCandidates.length,
-      loadedDates: loadedDates.sort(),
+      loadedDates: [...loadedDatesSet].sort(),
       dataSources,
+      loadErrors: loadErrors.slice(0, 5),
       settings,
       generatedAt: new Date().toISOString(),
     };
+
+    meta.warnings = buildMetaWarnings({
+      errorCount: loadErrors.length,
+      loadedDates: meta.loadedDates,
+      settings,
+    });
 
     try {
       meta.scanRunId = await saveScanRun({ settings, meta, results });

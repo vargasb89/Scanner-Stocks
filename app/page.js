@@ -31,12 +31,14 @@ function toCsv(rows) {
     "Float",
     "Shares Outstanding",
     "Volume",
+    "Dia corrida",
     "Dia despues corrida",
+    "Volume dia corrida",
+    "Dias holding",
     "Market Cap",
-    "% Corrida 5 dias",
+    "% Corrida",
     "% Retroceso",
     "Ultimo cierre",
-    "Dia corrida",
   ];
 
   const body = rows.map((row) => [
@@ -45,12 +47,14 @@ function toCsv(rows) {
     row.freeFloat,
     row.sharesOutstanding,
     row.volume,
+    row.runDay,
     row.dayAfterRun || "",
+    row.runDayVolume,
+    row.daysHolding,
     row.marketCap,
     row.runPct?.toFixed(2),
     row.retracementPct?.toFixed(2),
     row.lastClose,
-    row.runDay,
   ]);
 
   return [headers, ...body]
@@ -71,7 +75,7 @@ export default function Home() {
     moveThreshold: 50,
     maxMarketCap: 300000000,
     maxRetracement: 50,
-    lookbackSessions: 5,
+    lookbackSessions: 6,
     ticker: "",
   });
 
@@ -82,10 +86,16 @@ export default function Home() {
     return {
       totalVolume,
       biggestRun,
-      avgMarketCap:
-        rows.length > 0
-          ? rows.reduce((sum, row) => sum + (row.marketCap || 0), 0) / rows.length
-          : 0,
+      avgMarketCap: (() => {
+        const knownMarketCaps = rows
+          .map((row) => row.marketCap)
+          .filter((value) => Number.isFinite(value));
+        if (!knownMarketCaps.length) return null;
+        return (
+          knownMarketCaps.reduce((sum, value) => sum + value, 0) /
+          knownMarketCaps.length
+        );
+      })(),
     };
   }, [rows]);
 
@@ -176,7 +186,7 @@ export default function Home() {
           />
         </label>
         <label>
-          <span>Dias trading</span>
+          <span>Cierres</span>
           <input
             type="number"
             value={filters.lookbackSessions}
@@ -204,6 +214,9 @@ export default function Home() {
       </section>
 
       {error ? <div className="notice error">{error}</div> : null}
+      {meta?.warnings?.length ? (
+        <div className="notice warning">{meta.warnings.join(" ")}</div>
+      ) : null}
 
       <section className="stats">
         <div>
@@ -249,7 +262,10 @@ export default function Home() {
                 <th>Float</th>
                 <th>Shares Outstanding</th>
                 <th>Volume</th>
+                <th>Dia corrida</th>
                 <th>Dia despues corrida</th>
+                <th>Volume dia corrida</th>
+                <th>Dias holding</th>
                 <th>Market Cap</th>
                 <th>% Corrida</th>
                 <th>% Retroceso</th>
@@ -269,7 +285,10 @@ export default function Home() {
                   <td>{formatNumber(row.freeFloat)}</td>
                   <td>{formatNumber(row.sharesOutstanding)}</td>
                   <td>{formatNumber(row.volume)}</td>
+                  <td>{row.runDay || "-"}</td>
                   <td>{row.dayAfterRun || "-"}</td>
+                  <td>{formatNumber(row.runDayVolume)}</td>
+                  <td>{row.daysHolding ?? "-"}</td>
                   <td>{formatMoney(row.marketCap)}</td>
                   <td className="positive">{formatPercent(row.runPct)}</td>
                   <td>{formatPercent(row.retracementPct)}</td>
@@ -278,15 +297,16 @@ export default function Home() {
               ))}
               {!rows.length && !loading ? (
                 <tr>
-                  <td colSpan="10" className="empty">
-                    Corre el scanner para ver acciones que hayan subido mas de
-                    50%, con market cap menor a 300M y retroceso menor al 50%.
+                  <td colSpan="13" className="empty">
+                    {meta
+                      ? "No hay acciones que cumplan todos los filtros con los datos cargados."
+                      : "Corre el scanner para ver acciones que hayan subido mas de 50% en los ultimos 6 cierres y retroceso menor al 50%."}
                   </td>
                 </tr>
               ) : null}
               {loading ? (
                 <tr>
-                  <td colSpan="10" className="empty">
+                  <td colSpan="13" className="empty">
                     Buscando corridas recientes...
                   </td>
                 </tr>
