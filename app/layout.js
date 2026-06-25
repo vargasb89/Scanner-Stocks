@@ -1,7 +1,7 @@
 import "./styles.css";
 
 export const metadata = {
-  title: "Massive Gap Scanner",
+  title: "Massive Run Scanner",
   description: "Scanner de acciones small-cap con corridas recientes.",
 };
 

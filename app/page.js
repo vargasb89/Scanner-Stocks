@@ -31,12 +31,12 @@ function toCsv(rows) {
     "Float",
     "Shares Outstanding",
     "Volume",
-    "Dia despues corrida/GAP",
+    "Dia despues corrida",
     "Market Cap",
     "% Corrida 5 dias",
     "% Retroceso",
     "Ultimo cierre",
-    "Dia corrida/GAP",
+    "Dia corrida",
   ];
 
   const body = rows.map((row) => [
@@ -136,7 +136,7 @@ export default function Home() {
       <section className="topbar">
         <div>
           <p className="eyebrow">Massive API</p>
-          <h1>Small-Cap Gap Scanner</h1>
+          <h1>Small-Cap Run Scanner</h1>
         </div>
         <button className="primary" onClick={runScan} disabled={loading}>
           <RefreshCcw size={18} />
@@ -249,7 +249,7 @@ export default function Home() {
                 <th>Float</th>
                 <th>Shares Outstanding</th>
                 <th>Volume</th>
-                <th>Dia despues corrida/GAP</th>
+                <th>Dia despues corrida</th>
                 <th>Market Cap</th>
                 <th>% Corrida</th>
                 <th>% Retroceso</th>
@@ -287,7 +287,7 @@ export default function Home() {
               {loading ? (
                 <tr>
                   <td colSpan="10" className="empty">
-                    Buscando gaps y corridas recientes...
+                    Buscando corridas recientes...
                   </td>
                 </tr>
               ) : null}
