@@ -20,6 +20,7 @@ const DEFAULTS = {
   moveThreshold: 50,
   maxMarketCap: 300_000_000,
   maxRetracement: 50,
+  minRunDayVolume: 10_000_000,
   calendarDays: 21,
 };
 
@@ -233,6 +234,10 @@ export async function GET(request) {
       moveThreshold: toNumber(url.searchParams.get("moveThreshold"), DEFAULTS.moveThreshold),
       maxMarketCap: toNumber(url.searchParams.get("maxMarketCap"), DEFAULTS.maxMarketCap),
       maxRetracement: toNumber(url.searchParams.get("maxRetracement"), DEFAULTS.maxRetracement),
+      minRunDayVolume: Math.max(
+        0,
+        toNumber(url.searchParams.get("minRunDayVolume"), DEFAULTS.minRunDayVolume),
+      ),
       calendarDays: Math.max(
         8,
         Math.min(30, toNumber(url.searchParams.get("calendarDays"), DEFAULTS.calendarDays)),
@@ -288,7 +293,10 @@ export async function GET(request) {
     }
 
     const priceCandidates = buildPriceCandidates(barsByTicker, settings);
-    const withDetails = await enrichWithConcurrency(priceCandidates.slice(0, 120));
+    const volumeCandidates = priceCandidates.filter(
+      (row) => (row.runDayVolume || 0) >= settings.minRunDayVolume,
+    );
+    const withDetails = await enrichWithConcurrency(volumeCandidates.slice(0, 120));
     const rowsWithMarketCap = withDetails.map(normalizeMarketCap);
     const marketCapMatches = rowsWithMarketCap
       .filter((row) => row.marketCap === null || row.marketCap < settings.maxMarketCap)
@@ -302,6 +310,7 @@ export async function GET(request) {
     const meta = {
       scannedTickers: barsByTicker.size,
       priceCandidates: priceCandidates.length,
+      volumeCandidates: volumeCandidates.length,
       loadedDates: [...loadedDatesSet].sort(),
       dataSources,
       loadErrors: loadErrors.slice(0, 5),

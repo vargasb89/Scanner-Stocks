@@ -75,16 +75,22 @@ export default function Home() {
     moveThreshold: 50,
     maxMarketCap: 300000000,
     maxRetracement: 50,
+    minRunDayVolume: 10000000,
     lookbackSessions: 6,
     ticker: "",
   });
 
   const summary = useMemo(() => {
     const totalVolume = rows.reduce((sum, row) => sum + (row.volume || 0), 0);
+    const totalRunDayVolume = rows.reduce(
+      (sum, row) => sum + (row.runDayVolume || 0),
+      0,
+    );
     const biggestRun = rows.reduce((max, row) => Math.max(max, row.runPct || 0), 0);
 
     return {
       totalVolume,
+      totalRunDayVolume,
       biggestRun,
       avgMarketCap: (() => {
         const knownMarketCaps = rows
@@ -107,6 +113,7 @@ export default function Home() {
       moveThreshold: filters.moveThreshold,
       maxMarketCap: filters.maxMarketCap,
       maxRetracement: filters.maxRetracement,
+      minRunDayVolume: filters.minRunDayVolume,
       lookbackSessions: filters.lookbackSessions,
     });
 
@@ -197,6 +204,16 @@ export default function Home() {
             }
           />
         </label>
+        <label>
+          <span>Vol. dia corrida min.</span>
+          <input
+            type="number"
+            value={filters.minRunDayVolume}
+            onChange={(event) =>
+              setFilters({ ...filters, minRunDayVolume: event.target.value })
+            }
+          />
+        </label>
         <label className="tickerBox">
           <span>Ticker</span>
           <div>
@@ -228,8 +245,8 @@ export default function Home() {
           <strong>{formatPercent(summary.biggestRun)}</strong>
         </div>
         <div>
-          <span>Volumen total</span>
-          <strong>{formatNumber(summary.totalVolume)}</strong>
+          <span>Vol. dia corrida</span>
+          <strong>{formatNumber(summary.totalRunDayVolume)}</strong>
         </div>
         <div>
           <span>Market cap prom.</span>
@@ -300,7 +317,7 @@ export default function Home() {
                   <td colSpan="13" className="empty">
                     {meta
                       ? "No hay acciones que cumplan todos los filtros con los datos cargados."
-                      : "Corre el scanner para ver acciones que hayan subido mas de 50% en los ultimos 6 cierres y retroceso menor al 50%."}
+                      : "Corre el scanner para ver acciones que hayan subido mas de 50% en los ultimos 6 cierres, con volumen de corrida mayor a 10M y retroceso menor al 50%."}
                   </td>
                 </tr>
               ) : null}
