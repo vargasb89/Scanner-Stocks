@@ -37,7 +37,7 @@ function toCsv(rows) {
     "Dias holding",
     "Market Cap",
     "% Corrida",
-    "% Retroceso",
+    "% Retroceso al cierre",
     "Ultimo cierre",
   ];
 
@@ -285,7 +285,7 @@ export default function Home() {
                 <th>Dias holding</th>
                 <th>Market Cap</th>
                 <th>% Corrida</th>
-                <th>% Retroceso</th>
+                <th>% Retroceso al cierre</th>
                 <th>Ultimo cierre</th>
               </tr>
             </thead>

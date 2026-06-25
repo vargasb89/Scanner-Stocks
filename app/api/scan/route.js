@@ -60,18 +60,18 @@ function buildPriceCandidates(barsByTicker, settings) {
       if (advance <= 0) continue;
 
       const runPct = ((bar.high / prevClose) - 1) * 100;
-      const retracementPct = ((bar.high - bar.close) / advance) * 100;
+      const runDayRetracementPct = ((bar.high - bar.close) / advance) * 100;
       const isRun =
         runPct >= settings.moveThreshold &&
-        retracementPct <= settings.maxRetracement &&
         bar.close > bar.open;
 
       if (isRun) {
         runs.push({
           bar,
           prevClose,
+          advance,
           runPct,
-          retracementPct: Math.max(0, retracementPct),
+          runDayRetracementPct: Math.max(0, runDayRetracementPct),
           midpoint: prevClose + advance * 0.5,
         });
       }
@@ -83,6 +83,11 @@ function buildPriceCandidates(barsByTicker, settings) {
     const runIndex = sorted.findIndex((bar) => bar.date === latestRun.bar.date);
     const dayAfterRun = sorted[runIndex + 1]?.date || null;
     const dayChangePct = ((latest.close - previous.close) / previous.close) * 100;
+    const currentRetracementPct =
+      ((latestRun.bar.high - latest.close) / latestRun.advance) * 100;
+
+    if (currentRetracementPct > settings.maxRetracement) continue;
+
     let daysHolding = 0;
 
     for (const bar of sorted.slice(runIndex)) {
@@ -97,7 +102,8 @@ function buildPriceCandidates(barsByTicker, settings) {
       ticker,
       dayChangePct,
       runPct: latestRun.runPct,
-      retracementPct: latestRun.retracementPct,
+      retracementPct: Math.max(0, currentRetracementPct),
+      runDayRetracementPct: latestRun.runDayRetracementPct,
       volume: latest.volume,
       runDayVolume: latestRun.bar.volume,
       lastClose: latest.close,
