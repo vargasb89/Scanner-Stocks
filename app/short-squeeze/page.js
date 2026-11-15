@@ -37,6 +37,11 @@ const todayET = () => {
   const byType = Object.fromEntries(parts.map(({type,value}) => [type,value]));
   return [byType.year, byType.month, byType.day].join('-');
 };
+const lastNYWeekday = () => {
+  const date = new Date(todayET() + 'T00:00:00Z');
+  do { date.setUTCDate(date.getUTCDate() - 1); } while ([0,6].includes(date.getUTCDay()));
+  return date.toISOString().slice(0,10);
+};
 const emptyEvidence = () => ({lowFloat:'unverified', floatSource:'', etbD1:'unverified', etbD2:'unverified', catalyst:'unverified', source:'', published:''});
 
 function CheckSelect({label, value, onChange}) {
@@ -145,7 +150,16 @@ export default function ShortSqueezePage() {
   const detailAbort = useRef(null);
   const radarAbort = useRef(null);
   const tickerInput = useRef(null);
-  useEffect(() => () => { detailAbort.current?.abort(); radarAbort.current?.abort(); },[]);
+  const detailPanel = useRef(null);
+  useEffect(() => {
+    setD1(lastNYWeekday());
+    return () => { detailAbort.current?.abort(); radarAbort.current?.abort(); };
+  },[]);
+  function selectCandidate(value) {
+    setTicker(value);
+    if (detailPanel.current) detailPanel.current.open = true;
+    requestAnimationFrame(() => tickerInput.current?.focus());
+  }
   function invalidate() { detailAbort.current?.abort(); setView({kind:'idle'}); }
   function setTicker(value) {
     const next = value.toUpperCase();
@@ -210,7 +224,8 @@ export default function ShortSqueezePage() {
       if (!controller.signal.aborted) setView({kind:'error',message:error?.message || 'La consulta no está disponible.'});
     }
   }
-  async function marketRadar() {
+  async function marketRadar(e) {
+    e.preventDefault();
     radarAbort.current?.abort();
     if (!d1 || d1 >= todayET()) { setRadar({kind:'error',message:'Elige primero una fecha D1 válida.'}); return; }
     const controller=new AbortController();
@@ -235,11 +250,42 @@ export default function ShortSqueezePage() {
     <header className={s.hero}>
       <p className={s.kicker}>Momentum Screener · Estrategias</p>
       <h1>Short Squeeze</h1>
-      <p>Revisa el impulso D1 y la retención D2 en acciones de EE. UU. Los datos diarios no sustituyen la confirmación de la noticia ni la disponibilidad de préstamo de tu bróker.</p>
+      <p>Encuentra candidatas en el mercado de EE. UU. y luego revisa cuáles cumplen tu estrategia.</p>
     </header>
+    <section className={s.d3} aria-labelledby="radar-title" aria-busy={radar.kind==='loading'}>
+      <h2 id="radar-title">1 · Buscar candidatas en el mercado</h2>
+      <p><strong>No necesitas un ticker.</strong> Elige la fecha del impulso (D1) y el radar busca por ti.</p>
+      <form className={s.radarForm} onSubmit={marketRadar}>
+        <label className={s.label}>
+          <span>Fecha D1 · Nueva York</span>
+          <input name="d1" type="date" required value={d1} onChange={e=>setDate(e.target.value)}/>
+        </label>
+        <button type="submit" className={s.submit} disabled={!d1 || radar.kind==='loading'}><Search size={16} aria-hidden="true"/> {radar.kind==='loading'?'Buscando…':'Buscar candidatas D1/D2'}</button>
+      </form>
+      <p>El radar busca subidas de +20% a +100% en D1 y comprueba si el mínimo de D2 retuvo al menos la mitad. Si D2 aún no está disponible, la candidata queda pendiente. El radar no confirma por sí solo el tipo de acción, el gap, el volumen relativo, el flotante, la noticia ni el préstamo.</p>
+      <div aria-live="polite">
+        {radar.kind==='error' && <p className={s.error} role="alert">{radar.message}</p>}
+        {radar.kind==='result' && <>
+          <p>{radar.data.date || d1} · {Number.isFinite(radar.data.total) ? radar.data.total : radarRows.length} candidatas preliminares{radarRows.length ? ' · mostrando ' + radarRows.length : ''}{radar.data.d2Date ? ' · D2 ' + radar.data.d2Date : ' · D2 sin sesión disponible'}</p>
+          {radar.data.warning && <p className={s.notice}>{radar.data.warning}</p>}
+          {radarRows.length>0 ? <><p>Selecciona un símbolo para abrir su revisión individual.</p><div className={s.tableWrap}>
+            <table className={s.radarTable}>
+              <thead><tr><th scope="col">Símbolo</th><th scope="col">D1</th><th scope="col">Volumen</th><th scope="col">Máximo D1</th><th scope="col">Cierre D1</th><th scope="col">Retención D2</th></tr></thead>
+              <tbody>{radarRows.map(row=><tr key={row.symbol}>
+                <th scope="row"><button type="button" className={s.symbolButton} aria-label={'Revisar ' + row.symbol} onClick={()=>selectCandidate(row.symbol)}>{row.symbol}</button></th>
+                <td>{percent(row.changePct)}</td><td>{show(row.volume,volume)}</td><td>{show(row.high,money)}</td><td>{show(row.close,money)}</td><td>{percent(row.d2RetentionPct)}</td>
+              </tr>)}</tbody>
+            </table>
+          </div></> : <p>No se encontraron candidatas con estos filtros.</p>}
+        </>}
+      </div>
+    </section>
+    <details ref={detailPanel} className={s.detailPanel}>
+      <summary>2 · Revisar una candidata (opcional)</summary>
+      <p>Abre una candidata del radar o escribe un símbolo específico. Aquí se comprueban los filtros que faltan.</p>
     <div className={s.grid}>
       <section className={s.card} aria-labelledby="setup-title">
-        <h2 id="setup-title">1 · Configura la revisión</h2>
+        <h2 id="setup-title">Revisión por símbolo</h2>
         <form className={s.form} onSubmit={analyze}>
           <div className={s.fields}>
             <label className={s.label}>
@@ -247,8 +293,8 @@ export default function ShortSqueezePage() {
               <input ref={tickerInput} name="symbol" type="text" maxLength={15} required placeholder="Ej. AAPL" autoComplete="off" spellCheck="false" value={symbol} onChange={e=>setTicker(e.target.value)}/>
             </label>
             <label className={s.label}>
-              <span>Fecha D1 · Nueva York</span>
-              <input name="d1" type="date" required value={d1} onChange={e=>setDate(e.target.value)}/>
+              <span>Fecha D1 seleccionada</span>
+              <input type="text" readOnly value={d1 || 'No seleccionada'}/>
             </label>
           </div>
           <fieldset>
@@ -288,7 +334,7 @@ export default function ShortSqueezePage() {
       </section>
       <section className={s.card} aria-labelledby="result-title" aria-live="polite" aria-busy={view.kind==='loading'}>
         {view.kind==='result' ? <Result result={view.result} sourced={view.sourced}/> : <>
-          <h2 id="result-title">2 · Resultado del detector</h2>
+          <h2 id="result-title">Resultado de la revisión</h2>
           {view.kind==='error' ? <p className={s.error} role="alert">{view.message}</p> :
             <div className={s.placeholder}><Activity size={30} aria-hidden="true"/>
               <strong>{view.kind==='loading'?'Consultando sesiones diarias':'Todavía no hay una revisión'}</strong>
@@ -297,29 +343,7 @@ export default function ShortSqueezePage() {
         </>}
       </section>
     </div>
-    <section className={s.d3} aria-labelledby="radar-title" aria-busy={radar.kind==='loading'}>
-      <div className={s.sectionTop}>
-        <h2 id="radar-title">Radar · candidatos del mercado</h2>
-        <button type="button" className={s.radarButton} onClick={marketRadar} disabled={radar.kind==='loading'}><Search size={15} aria-hidden="true"/> {radar.kind==='loading'?'Buscando…':'Buscar candidatos D1/D2'}</button>
-      </div>
-      <p>Usa la fecha D1 del formulario. El radar aplica +20% a +100% en D1 y retención de al menos 50% por el mínimo D2, si hay vela. Sin D2 se mantienen como pendientes. Puede incluir instrumentos que no sean acciones comunes. Comprueba universo, gap, RVOL, flotante, préstamo y noticia en el detalle.</p>
-      <div aria-live="polite">
-        {radar.kind==='error' && <p className={s.error} role="alert">{radar.message}</p>}
-        {radar.kind==='result' && <>
-          <p>{radar.data.date || d1} · {Number.isFinite(radar.data.total) ? radar.data.total : radarRows.length} candidatos mecánicos{radarRows.length ? ' · mostrando ' + radarRows.length : ''}{radar.data.d2Date ? ' · D2 ' + radar.data.d2Date : ' · D2 sin sesión disponible'}</p>
-          {radar.data.warning && <p className={s.notice}>{radar.data.warning}</p>}
-          {radarRows.length>0 ? <div className={s.tableWrap}>
-            <table className={s.radarTable}>
-              <thead><tr><th scope="col">Símbolo</th><th scope="col">D1</th><th scope="col">Volumen</th><th scope="col">Máximo D1</th><th scope="col">Cierre D1</th><th scope="col">Retención D2</th></tr></thead>
-              <tbody>{radarRows.map(row=><tr key={row.symbol}>
-                <th scope="row"><button type="button" className={s.symbolButton} onClick={()=>{setTicker(row.symbol);tickerInput.current?.focus();}}>{row.symbol}</button></th>
-                <td>{percent(row.changePct)}</td><td>{show(row.volume,volume)}</td><td>{show(row.high,money)}</td><td>{show(row.close,money)}</td><td>{percent(row.d2RetentionPct)}</td>
-              </tr>)}</tbody>
-            </table>
-          </div> : <p>No se encontraron candidatos con este filtro.</p>}
-        </>}
-      </div>
-    </section>
+    </details>
     <section className={s.d3} aria-labelledby="d3-title">
       <h2 id="d3-title">3 · D3 en adelante: revisión en tu bróker</h2>
       <p>Checklist discrecional. El módulo no confirma patrones intradía, no simula ejecuciones y no envía órdenes.</p>
