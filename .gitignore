@@ -1,6 +1,10 @@
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+.massive-key-*
+__pycache__/
 .next
 node_modules
 out

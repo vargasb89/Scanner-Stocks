@@ -1,8 +1,8 @@
 import "./styles.css";
 
 export const metadata = {
-  title: "Massive Run Scanner",
-  description: "Scanner de acciones small-cap con corridas recientes.",
+  title: "Momentum Screener | Massive",
+  description: "Scanner personal de acciones, momentum, noticias y gráficos con datos de Massive.",
 };
 
 export default function RootLayout({ children }) {
