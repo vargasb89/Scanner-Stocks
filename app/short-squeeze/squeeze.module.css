@@ -59,7 +59,7 @@
 .radarButton{background:#27213d;border:1px solid #5e4e82;border-radius:6px;color:#e5d6ff;font:inherit;font-size:13px;font-weight:700;cursor:pointer;padding:8px 11px;display:inline-flex;align-items:center;gap:6px}
 .radarButton:disabled{cursor:progress;opacity:.65}.radarButton:hover,.symbolButton:hover{color:white;background:#414066}
 .tableWrap{overflow:auto}
-.radarTable{width:100%;min-width:550px;border-collapse:collapse;text-align:left;font-size:13px;font-variant-numeric:tabular-nums}
+.radarTable{width:100%;min-width:700px;border-collapse:collapse;text-align:left;font-size:13px;font-variant-numeric:tabular-nums}
 .radarTable th,.radarTable td{padding:7px 9px;border-bottom:1px solid #353b54}
 .radarTable thead th{color:var(--sub);font-size:12px}
 .symbolButton{padding:4px 6px;margin-left:-6px;color:#acc5ff;background:transparent;border:1px solid transparent;border-radius:5px;font:inherit;cursor:pointer}

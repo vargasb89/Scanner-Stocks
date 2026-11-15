@@ -25,6 +25,7 @@ const OUTCOMES = {
   observation: ['pass', 'En observación D3+', 'Cumplió la revisión D1/D2 con los datos y confirmaciones aportados. No es una señal de entrada.'],
 };
 const volume = new Intl.NumberFormat('es-CO', {notation: 'compact', maximumFractionDigits: 2});
+const shareCount = new Intl.NumberFormat('es-CO', {maximumFractionDigits: 0});
 const number = new Intl.NumberFormat('es-CO', {maximumFractionDigits: 2, minimumFractionDigits: 2});
 const money = new Intl.NumberFormat('es-CO', {style: 'currency', currency: 'USD', maximumFractionDigits: 4});
 const show = (val, fmt = number) => Number.isFinite(val) ? fmt.format(val) : '—';
@@ -268,12 +269,12 @@ export default function ShortSqueezePage() {
         {radar.kind==='result' && <>
           <p>{radar.data.date || d1} · {Number.isFinite(radar.data.total) ? radar.data.total : radarRows.length} candidatas preliminares{radarRows.length ? ' · mostrando ' + radarRows.length : ''}{radar.data.d2Date ? ' · D2 ' + radar.data.d2Date : ' · D2 sin sesión disponible'}</p>
           {radar.data.warning && <p className={s.notice}>{radar.data.warning}</p>}
-          {radarRows.length>0 ? <><p>Selecciona un símbolo para abrir su revisión individual.</p><div className={s.tableWrap}>
+          {radarRows.length>0 ? <><p>Volumen histórico de la sesión, en acciones. No es volumen intradía ni volumen relativo (RVOL). Selecciona un símbolo para ver la revisión individual.</p><div className={s.tableWrap} tabIndex={0} role="region" aria-label="Candidatas del radar, tabla desplazable">
             <table className={s.radarTable}>
-              <thead><tr><th scope="col">Símbolo</th><th scope="col">D1</th><th scope="col">Volumen</th><th scope="col">Máximo D1</th><th scope="col">Cierre D1</th><th scope="col">Retención D2</th></tr></thead>
+              <thead><tr><th scope="col">Símbolo</th><th scope="col">D1</th><th scope="col">Vol. D1 (acciones)</th><th scope="col">Vol. D2 (acciones)</th><th scope="col">Máximo D1</th><th scope="col">Cierre D1</th><th scope="col">Retención D2</th></tr></thead>
               <tbody>{radarRows.map(row=><tr key={row.symbol}>
                 <th scope="row"><button type="button" className={s.symbolButton} aria-label={'Revisar ' + row.symbol} onClick={()=>selectCandidate(row.symbol)}>{row.symbol}</button></th>
-                <td>{percent(row.changePct)}</td><td>{show(row.volume,volume)}</td><td>{show(row.high,money)}</td><td>{show(row.close,money)}</td><td>{percent(row.d2RetentionPct)}</td>
+                <td>{percent(row.changePct)}</td><td>{show(row.d1Volume,shareCount)}</td><td>{Number.isFinite(row.d2Volume) ? show(row.d2Volume,shareCount) : 'Pendiente'}</td><td>{show(row.high,money)}</td><td>{show(row.close,money)}</td><td>{percent(row.d2RetentionPct)}</td>
               </tr>)}</tbody>
             </table>
           </div></> : <p>No se encontraron candidatas con estos filtros.</p>}

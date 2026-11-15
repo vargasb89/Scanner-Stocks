@@ -12,6 +12,7 @@ test("mechanical radar accepts inclusive price limits, excludes failed D2, and p
   });
   assert.equal(result.total, 2);
   assert.equal(result.failedRetention, 1);
+  assert.deepEqual(result.rows.map(({d1Volume,d2Volume}) => [d1Volume,d2Volume]), [[2000,4200],[5000,null]]);
   assert.deepEqual(result.rows.map(({ symbol, d2RetentionPct }) => [symbol, d2RetentionPct]), [["PASS", 50], ["UPPER", null]]);
 });
 
@@ -24,6 +25,8 @@ test("missing D2 never manufactures a passed check; takes top volume with result
   assert.equal(result.total, 2);
   assert.equal(result.rows[0].symbol, "B");
   assert.equal(result.rows[0].d2RetentionPct, null);
+  assert.equal(result.rows[0].d1Volume, 200);
+  assert.equal(result.rows[0].d2Volume, null);
 });
 
 test("universe route uses the next exchange session and no credentials leave mocked fetch", async (t) => {
@@ -51,6 +54,8 @@ test("universe route uses the next exchange session and no credentials leave moc
   assert.equal(result.previousDate, sessions[0]);
   assert.equal(result.d2Date, sessions[2]);
   assert.equal(calls.length, 4);
+  assert.equal(result.rows[0].d1Volume, 1000);
+  assert.equal(result.rows[0].d2Volume, 1000);
   assert.equal(result.rows[0].d2RetentionPct, 60);
   assert.equal(result.warning.includes("ETB"), true);
 });
@@ -84,4 +89,15 @@ test("provider authorization failure is distinct from a missing key", async (t) 
   const body = await resp.json();
   assert.equal(body.code, "MASSIVE_DATA_FORBIDDEN");
   assert.ok(!JSON.stringify(body).includes("untrusted provider payload"));
+});
+
+test("absent or invalid bar volumes remain pending, never reported as zero shares", () => {
+  const result = rankShortSqueezeUniverse({
+    previousBars: [bar("TEST", 10, 10, 100)],
+    d1Bars: [bar("TEST", 14, 15, undefined)],
+    d2Bars: [bar("TEST", 13, 14, 0)],
+  });
+  assert.equal(result.rows[0].d1Volume, null);
+  assert.equal(result.rows[0].d2Volume, null);
+  assert.equal(result.rows[0].d2RetentionPct, 75);
 });
