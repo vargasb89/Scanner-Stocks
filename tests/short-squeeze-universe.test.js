@@ -54,3 +54,34 @@ test("universe route uses the next exchange session and no credentials leave moc
   assert.equal(result.rows[0].d2RetentionPct, 60);
   assert.equal(result.warning.includes("ETB"), true);
 });
+
+test("missing Preview credential returns a safe diagnostic before any provider request", async (t) => {
+  const backups = Object.fromEntries(["MASSIVE_API_KEY", "POLYGON_API_KEY"].map((key) => [key, process.env[key]]));
+  for (const key of Object.keys(backups)) delete process.env[key];
+  t.after(() => {
+    for (const [key, value] of Object.entries(backups)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const provider = t.mock.method(globalThis, "fetch", async () => { throw new Error("unexpected request"); });
+  const resp = await GET(new Request("http://localhost/api/short-squeeze/universe?d1=2025-11-26"));
+  assert.equal(resp.status, 503);
+  assert.equal((await resp.json()).code, "MASSIVE_NOT_CONFIGURED");
+  assert.equal(provider.mock.callCount(), 0);
+});
+
+test("provider authorization failure is distinct from a missing key", async (t) => {
+  const backup = process.env.MASSIVE_API_KEY;
+  process.env.MASSIVE_API_KEY = "mock";
+  t.after(() => {
+    if (backup === undefined) delete process.env.MASSIVE_API_KEY;
+    else process.env.MASSIVE_API_KEY = backup;
+  });
+  t.mock.method(globalThis, "fetch", async () => new Response("untrusted provider payload", { status: 403 }));
+  const resp = await GET(new Request("http://localhost/api/short-squeeze/universe?d1=2025-11-26"));
+  assert.equal(resp.status, 502);
+  const body = await resp.json();
+  assert.equal(body.code, "MASSIVE_DATA_FORBIDDEN");
+  assert.ok(!JSON.stringify(body).includes("untrusted provider payload"));
+});

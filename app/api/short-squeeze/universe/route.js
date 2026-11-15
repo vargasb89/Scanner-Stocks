@@ -14,6 +14,12 @@ export async function GET(request) {
     return response({ error: "Elige una sesión pasada de Nueva York para D1." }, 400);
   }
 
+  if (!process.env.MASSIVE_API_KEY && !process.env.POLYGON_API_KEY) {
+    return response({
+      code: "MASSIVE_NOT_CONFIGURED",
+      error: "Esta versión del scanner no tiene configurada la conexión a Massive.",
+    }, 503);
+  }
   try {
     const to = [dateOffset(date, 10), latest].sort()[0];
     const from = dateOffset(date, -10);
@@ -41,10 +47,13 @@ export async function GET(request) {
         : "D2 no está disponible. La lista solo aplica el filtro de precio D1; el resto se verifica en el análisis por ticker.",
     });
   } catch (error) {
-    const limited = error?.status === 429;
-    const message = limited
-      ? "Massive alcanzó su límite de consultas. Intenta de nuevo en un minuto."
-      : "No se pudieron obtener las barras del mercado desde Massive.";
-    return response({ error: message }, limited ? 429 : 502);
+    const diagnostics = {
+      401: ["MASSIVE_AUTH_REJECTED", "Massive rechazó la credencial de esta versión del scanner.", 502],
+      403: ["MASSIVE_DATA_FORBIDDEN", "Massive no ofrece acceso a estos datos para la conexión o la fecha elegida.", 502],
+      429: ["MASSIVE_RATE_LIMITED", "Massive alcanzó su límite de consultas. Intenta de nuevo en un minuto.", 429],
+    };
+    const [code, message, status] = diagnostics[error?.status] ??
+      ["MASSIVE_UNAVAILABLE", "No se pudieron obtener las barras del mercado desde Massive.", 502];
+    return response({ error: message, code }, status);
   }
 }
